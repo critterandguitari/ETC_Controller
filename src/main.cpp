@@ -115,12 +115,12 @@ int main(int argc, char* argv[]) {
 	// Infinite loop
 
 	// oled init
-	ssd1306_init(0);
+	//ssd1306_init(0);
 
-	println_8_spacy("   ORGANELLE", 12, 6, 4);
+	//println_8_spacy("   ORGANELLE", 12, 6, 4);
 
 	//println_8("for more patches visit", 22, 0, 22);
-	println_8("www.organelle.io", 16, 8, 28);
+	//println_8("www.organelle.io", 16, 8, 28);
 //	println_8("for patches", 11, 8, 42);
 
 	char progressStr[20];
@@ -172,7 +172,7 @@ int main(int argc, char* argv[]) {
 			// dispatch it
 			if (!msgIn.hasError()) {
 				msgIn.dispatch("/led", ledControl, 0);
-				msgIn.dispatch("/oled", oledControl, 0);
+				//msgIn.dispatch("/oled", oledControl, 0);
 				msgIn.dispatch("/getknobs", getKnobs, 0);
 				msgIn.dispatch("/shutdown", shutdown, 0);
 				msgIn.empty(); // free space occupied by message
@@ -182,18 +182,18 @@ int main(int argc, char* argv[]) {
 		}
 
 		// every time mux gets back to 0 key scan is complete
-		if (scanKeys() == 0) {
-			checkForKeyEvent(); // and send em out if we got em
-			// also check about the foot switch
-			checkFootSwitch();
-		}
+		scanKeys();
+		checkForKeyEvent(); // and send em out if we got em
+		// also check about the foot switch
+		checkFootSwitch();
+
 		updateKnobs();
 
 		// check encoder
 		// only check every 5 ms cause the button needs a lot of debounce time
 		if (stopwatchReport() > 50){
 			stopwatchStart();
-			checkEncoder();
+			//checkEncoder();
 		}
 
 	} // Infinite loop, never return.
@@ -208,39 +208,30 @@ void hardwareInit(void){
 	/* ADC1 configuration */
 	ADC_Config();
 
-	// MUX SEL Lines
+
+	// key lines
 	GPIO_InitTypeDef GPIO_InitStructure;
 	GPIO_StructInit(&GPIO_InitStructure);
+
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA, ENABLE);
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOB, ENABLE);
 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOC, ENABLE);
 
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7 | GPIO_Pin_8;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
 
-	GPIO_Init(GPIOC, &GPIO_InitStructure);
 
-	GPIO_ResetBits(GPIOC, GPIO_Pin_6); //
-	GPIO_SetBits(GPIOC, GPIO_Pin_7); //
-	GPIO_SetBits(GPIOC, GPIO_Pin_8); //
-	// end mux select lines
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5 | GPIO_Pin_7 | GPIO_Pin_8 | GPIO_Pin_9 | GPIO_Pin_10;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	// Enc lines
-	// config as input
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOB, ENABLE);
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_14 | GPIO_Pin_13 | GPIO_Pin_15;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_13 | GPIO_Pin_14 | GPIO_Pin_15;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
 	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
 	GPIO_Init(GPIOB, &GPIO_InitStructure);
-	// end enc lines
 
-	// key lines
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOB, ENABLE);
-	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2
-			| GPIO_Pin_3;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6 | GPIO_Pin_7;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_DOWN;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
 	GPIO_Init(GPIOC, &GPIO_InitStructure);
 
 	// foot switch
@@ -492,96 +483,37 @@ void shutdown(OSCMessage &msg) {
 // end OSC callbacks
 
 /// scan keys
-void keyMuxSel(uint32_t sel) {
-	if (sel == 0) {
-		MUX_0
-		;
-	} else if (sel == 1) {
-		MUX_1
-		;
-	} else if (sel == 2) {
-		MUX_2
-		;
-	} else if (sel == 3) {
-		MUX_3
-		;
-	} else if (sel == 4) {
-		MUX_4
-		;
-	} else if (sel == 5) {
-		MUX_5
-		;
-	} else if (sel == 6) {
-		MUX_6
-		;
-	} else if (sel == 7) {
-		MUX_7
-		;
-	} else {
-		MUX_0
-		;
-	}
-}
-
 uint32_t scanKeys() {
-	static uint32_t seqCount = 0;
-	static uint32_t muxSelCount = 0;
 
-	if (seqCount == 0) {
-		keyMuxSel(muxSelCount);  // select the mux
-		muxSelCount++;        	// and increment for next time through
-		muxSelCount %= 8;
-	}
-	if (seqCount == 1) {
-		// do nothing, wait for next conversion sequence since the muxes were just changed
-	}
-	if (seqCount == 2) {
-		keyValuesRaw[0] = (GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_3)) ? 0 : 100; // the aux key
-		keyValuesRaw[1 + muxSelCount] =
-				(GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_2)) ? 0 : 100; //RegularConvData_Tab[3];
-		keyValuesRaw[9 + muxSelCount] =
-				(GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_1)) ? 0 : 100; //RegularConvData_Tab[4];
-		keyValuesRaw[17 + muxSelCount] =
-				(GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_0)) ? 0 : 100; //RegularConvData_Tab[5];
-		keyValuesRaw[25] = 0;//(GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_1)) ? 0 : 100; // the foot switch
-	}
-	seqCount++;
-	seqCount %= 3;
-	return muxSelCount;
+		keyValuesRaw[0] = (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_5)) ? 0 : 100; // k1, SD
+		keyValuesRaw[1] = (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_7)) ? 0 : 100; // k2, PM
+		keyValuesRaw[2] = (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_8)) ? 0 : 100; // k3, NM
+
+		keyValuesRaw[3] = (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_9)) ? 0 : 100; // k4, OSD
+		keyValuesRaw[4] = (GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_10)) ? 0 : 100; // k5, PP
+		keyValuesRaw[5] = (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_13)) ? 0 : 100; // k6, NP
+
+		keyValuesRaw[6] = (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_14)) ? 0 : 100; // k7, SP
+		keyValuesRaw[7] = (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_15)) ? 0 : 100; // k8, CLR
+		keyValuesRaw[8] = (GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_6)) ? 0 : 100; // 9, AC
+		keyValuesRaw[9] = (GPIO_ReadInputDataBit(GPIOC, GPIO_Pin_7)) ? 0 : 100; // 10, PIC
+
 }
 
 void remapKeys() {
 	static uint32_t cycleCount = 0;
 
 	keyValues[cycleCount][0] = keyValuesRaw[0];
-	keyValues[cycleCount][25] = keyValuesRaw[25];
+	keyValues[cycleCount][1] = keyValuesRaw[1];
+	keyValues[cycleCount][3] = keyValuesRaw[2];
+	keyValues[cycleCount][24] = keyValuesRaw[3];
+	keyValues[cycleCount][6] = keyValuesRaw[4];
+	keyValues[cycleCount][8] = keyValuesRaw[5];
+	keyValues[cycleCount][7] = keyValuesRaw[6];
+	keyValues[cycleCount][2] = keyValuesRaw[7];
+	keyValues[cycleCount][23] = keyValuesRaw[8];
+	keyValues[cycleCount][5] = keyValuesRaw[9];
 
-	keyValues[cycleCount][1] = keyValuesRaw[23];
-	keyValues[cycleCount][2] = keyValuesRaw[21];
-	keyValues[cycleCount][3] = keyValuesRaw[17];
-	keyValues[cycleCount][4] = keyValuesRaw[18];
-	keyValues[cycleCount][5] = keyValuesRaw[24];
-	keyValues[cycleCount][6] = keyValuesRaw[22];
-	keyValues[cycleCount][7] = keyValuesRaw[19];
-	keyValues[cycleCount][8] = keyValuesRaw[20];
-
-	keyValues[cycleCount][9] = keyValuesRaw[13];
-	keyValues[cycleCount][10] = keyValuesRaw[15];
-	keyValues[cycleCount][11] = keyValuesRaw[10];
-	keyValues[cycleCount][12] = keyValuesRaw[9];
-	keyValues[cycleCount][13] = keyValuesRaw[16];
-	keyValues[cycleCount][14] = keyValuesRaw[11];
-	keyValues[cycleCount][15] = keyValuesRaw[14];
-	keyValues[cycleCount][16] = keyValuesRaw[12];
-
-	keyValues[cycleCount][17] = keyValuesRaw[5];
-	keyValues[cycleCount][18] = keyValuesRaw[7];
-	keyValues[cycleCount][19] = keyValuesRaw[2];
-	keyValues[cycleCount][20] = keyValuesRaw[1];
-	keyValues[cycleCount][21] = keyValuesRaw[4];
-	keyValues[cycleCount][22] = keyValuesRaw[8];
-	keyValues[cycleCount][23] = keyValuesRaw[3];
-	keyValues[cycleCount][24] = keyValuesRaw[6];
 
 	cycleCount++;
 	cycleCount &= 0x3;  // i between 0-3
@@ -677,90 +609,6 @@ void checkFootSwitch (void) {
 	}
 }
 
-void checkEncoder(void) {
-
-	static uint8_t encoder_last = 0;
-	uint8_t encoder = 0;
-
-
-	// because the encoder has a crappy switch, we need  a
-	// different debouce time for press and release
-	// assume checkEncoder gets called every 5ms,
-	// we will wait 10 counts for press and 50 counts for release
-	#define PRESS 0
-	#define RELEASE 1
-	uint8_t button;
-	static uint8_t button_last = RELEASE;
-	static uint8_t press_count = 0;
-	static uint8_t release_count = 0;
-
-	button = (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_13));
-
-	if (button == PRESS) {
-		press_count++;
-		release_count = 0;
-	}
-	if ((press_count > 10) && (button_last == RELEASE)){	// press
-			button_last = PRESS;
-			release_count = 0;
-
-			// send press
-			OSCMessage msgEncoder("/encbut");
-			msgEncoder.add(1);
-			msgEncoder.send(oscBuf);
-			slip.sendMessage(oscBuf.buffer, oscBuf.length);
-	}
-
-	if (button == RELEASE) {
-		release_count++;
-		press_count = 0;
-	}
-	if ((release_count > 50) && (button_last == PRESS)){	// release
-			button_last = RELEASE;
-			press_count = 0;
-
-			// send release
-			OSCMessage msgEncoder("/encbut");
-			msgEncoder.add(0);
-			msgEncoder.send(oscBuf);
-			slip.sendMessage(oscBuf.buffer, oscBuf.length);
-	}
-
-
-
-
-	// turning
-	encoder = 0;
-	if (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_14))
-		encoder |= 0x1;
-	if (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_15))
-		encoder |= 0x2;
-
-	if (encoder != encoder_last) {
-
-		if (encoder_last == 0) {
-			OSCMessage msgEncoder("/enc");
-			if (encoder == 2)
-				msgEncoder.add(0);
-			if (encoder == 1)
-				msgEncoder.add(1);
-			msgEncoder.send(oscBuf);
-			slip.sendMessage(oscBuf.buffer, oscBuf.length);
-		}
-		if (encoder_last == 3) {
-			OSCMessage msgEncoder("/enc");
-			if (encoder == 1)
-				msgEncoder.add(0);
-			if (encoder == 2)
-				msgEncoder.add(1);
-			msgEncoder.send(oscBuf);
-			slip.sendMessage(oscBuf.buffer, oscBuf.length);
-		}
-		encoder_last = encoder;
-
-		//msgEncoder.setAddress("/enc");
-	}
-}
 
 
 #pragma GCC diagnostic pop

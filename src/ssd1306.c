@@ -88,26 +88,26 @@ void ssd1306_sck(uint8_t stat) {
 }
 
 void CMD(uint8_t c) {
-	ssd1306_cs(1);
+/*	ssd1306_cs(1);
 	ssd1306_dc(0);
 	ssd1306_cs(0);
 	ssd1306_send_byte(c);
-	ssd1306_cs(1);
+	ssd1306_cs(1);*/
 
 }
 
 void DATA(uint8_t c) {
-	ssd1306_cs(1);
+/*	ssd1306_cs(1);
 	ssd1306_dc(1);
 	ssd1306_cs(0);
 	ssd1306_send_byte(c);
-	ssd1306_cs(1);
+	ssd1306_cs(1);*/
 }
 
 void ssd1306_send_byte(uint8_t byte) {
 
-	SPI_SendData8(SPI1, byte);
-	while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY))
+/*	SPI_SendData8(SPI1, byte);
+	while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY))*/
 		;   // wait till done sending
 
 	/*  for (i=7; i>=0; i--)
