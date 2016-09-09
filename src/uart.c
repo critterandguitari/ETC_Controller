@@ -12,6 +12,10 @@ uint8_t uart2_recv_buf[UART2_BUFFER_SIZE];
 uint16_t uart2_recv_buf_head = 0;
 uint16_t uart2_recv_buf_tail = 0;
 
+uint8_t uart1_recv_buf[UART2_BUFFER_SIZE];
+uint16_t uart1_recv_buf_head = 0;
+uint16_t uart1_recv_buf_tail = 0;
+
 void uart2_init(void) {
 
 	USART_InitTypeDef USART_InitStructure;
@@ -62,6 +66,50 @@ void uart2_init(void) {
 	NVIC_Init(&NVIC_InitStructure);
 
 	USART_Cmd(USART2, ENABLE);
+
+
+	// UART 1 for midi
+	GPIO_StructInit(&GPIO_InitStructure);
+	USART_StructInit(&USART_InitStructure);
+
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOB, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
+
+	GPIO_PinAFConfig(GPIOB, GPIO_PinSource7, GPIO_AF_0);
+	//GPIO_PinAFConfig(GPIOB, GPIO_PinSource6, GPIO_AF_0);
+
+	//Configure USART1 pins:  Rx ----------------------------
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_7 /*| GPIO_Pin_6*/;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	//Configure USART2 setting:         ----------------------------
+	USART_InitStructure.USART_BaudRate = 31250;
+	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+	USART_InitStructure.USART_StopBits = USART_StopBits_1;
+	USART_InitStructure.USART_Parity = USART_Parity_No;
+	USART_InitStructure.USART_HardwareFlowControl =
+			USART_HardwareFlowControl_None;
+	USART_InitStructure.USART_Mode = USART_Mode_Rx /*| USART_Mode_Tx*/;
+	USART_Init(USART1, &USART_InitStructure);
+
+	/* Here the USART1 receive interrupt is enabled
+	 * and the interrupt controller is configured
+	 * to jump to the USART1_IRQHandler() function
+	 * if the USART1 receive interrupt occurs
+	 */
+	USART_ITConfig(USART1, USART_IT_RXNE, ENABLE); // enable the USART1 receive interrupt
+
+	/* Enable USART1 IRQ */
+	NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
+	USART_Cmd(USART1, ENABLE);
 }
 
 void uart2_send(uint8_t c) {
@@ -70,6 +118,14 @@ void uart2_send(uint8_t c) {
 
 	USART_SendData(USART2, c);
 }
+
+void uart1_send(uint8_t c) {
+	while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET)
+		; // Wait for Empty
+
+	USART_SendData(USART1, c);
+}
+
 
 int uart2_available(void) {
 	return (int) (UART2_BUFFER_SIZE + uart2_recv_buf_head - uart2_recv_buf_tail)
@@ -108,4 +164,20 @@ void USART2_IRQHandler(void) {
 		uart2_recv_buf_head %= UART2_BUFFER_SIZE;  //
 
 	}
+}
+
+void USART1_IRQHandler(void) {
+
+	// check if the USART1 receive interrupt flag was set
+
+	 AUX_LED_BLUE_ON;
+	if (USART_GetITStatus(USART1, USART_IT_RXNE) != RESET) {
+
+		uart1_recv_buf[uart1_recv_buf_head] = USART_ReceiveData(USART1);
+
+		uart1_recv_buf_head++;
+		uart1_recv_buf_head %= UART1_BUFFER_SIZE;  //
+
+	}
+	 AUX_LED_BLUE_OFF;
 }

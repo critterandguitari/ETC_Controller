@@ -10,6 +10,7 @@ CPP_SRCS += \
 C_SRCS += \
 ../src/BlinkLed.c \
 ../src/Timer.c \
+../src/midi.c \
 ../src/spi.c \
 ../src/ssd1306.c \
 ../src/uart.c 
@@ -19,6 +20,7 @@ OBJS += \
 ./src/SLIPEncodedSerial.o \
 ./src/Timer.o \
 ./src/main.o \
+./src/midi.o \
 ./src/spi.o \
 ./src/ssd1306.o \
 ./src/uart.o 
@@ -26,6 +28,7 @@ OBJS += \
 C_DEPS += \
 ./src/BlinkLed.d \
 ./src/Timer.d \
+./src/midi.d \
 ./src/spi.d \
 ./src/ssd1306.d \
 ./src/uart.d 

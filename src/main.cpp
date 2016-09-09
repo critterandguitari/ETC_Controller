@@ -14,11 +14,18 @@ extern "C" {
 #include "Timer.h"
 #include "BlinkLed.h"
 #include "ssd1306.h"
+#include "midi.h"
 }
 
 #include "OSC/OSCMessage.h"
 #include "SLIPEncodedSerial.h"
 #include "OSC/SimpleWriter.h"
+
+extern uint8_t uart1_recv_buf[];
+extern uint16_t uart1_recv_buf_head;
+extern uint16_t uart1_recv_buf_tail;
+
+extern int note_on_flag;
 
 // ADC DMA stuff
 #define ADC1_DR_Address    0x40012440
@@ -110,7 +117,14 @@ int main(int argc, char* argv[]) {
 
 	uart2_init();
 
+	/*for (;;){
+
+		uart1_send(0xAA);
+	}*/
+
 	hardwareInit();
+
+	midi_init(0);
 
 	// Infinite loop
 
@@ -164,6 +178,28 @@ int main(int argc, char* argv[]) {
 	stopwatchStart();   // used to check encoder only 1 per 5 ms
 
 	while (1) {
+
+		while (uart1_recv_buf_tail != uart1_recv_buf_head) {
+			uint8_t tmp8 = uart1_recv_buf[uart1_recv_buf_tail++];
+			uart1_recv_buf_tail %= UART1_BUFFER_SIZE;
+			recvByte(tmp8);
+
+		} // gettin MIDI bytes
+
+		if (note_on_flag){
+			OSCMessage msgKey("/midi");
+
+			msgKey.add((int32_t) 10);
+			msgKey.add((int32_t) 100);
+
+			msgKey.send(oscBuf);
+			slip.sendMessage(oscBuf.buffer, oscBuf.length);
+
+			msgKey.empty(); // free space occupied by message
+			note_on_flag = 0;
+		}
+
+
 		if (slip.recvMessage()) {
 			// fill the message and dispatch it
 
