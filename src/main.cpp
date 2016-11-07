@@ -25,7 +25,30 @@ extern uint8_t uart1_recv_buf[];
 extern uint16_t uart1_recv_buf_head;
 extern uint16_t uart1_recv_buf_tail;
 
+// MIDI receive flags and values
 extern int note_on_flag;
+extern int note_on_num;
+extern int note_on_vel;
+extern int note_on_ch;
+
+extern int note_off_flag;
+extern int note_off_num;
+extern int note_off_vel;
+extern int note_off_ch;
+
+extern int pgm_chg_flag;
+extern int pgm_chg_num;
+extern int pgm_chg_ch;
+
+extern int cc_flag;
+extern int cc_num;
+extern int cc_ch;
+extern int cc_value;
+
+extern int sync_flag;
+extern int stop_flag;
+extern int start_flag;
+extern int continue_flag;
 
 // ADC DMA stuff
 #define ADC1_DR_Address    0x40012440
@@ -90,6 +113,9 @@ void checkEncoder(void) ;
 
 //foot
 void checkFootSwitch (void) ;
+
+// midi
+void MIDItoOSC(void);
 
 int main(int argc, char* argv[]) {
 
@@ -186,18 +212,7 @@ int main(int argc, char* argv[]) {
 
 		} // gettin MIDI bytes
 
-		if (note_on_flag){
-			OSCMessage msgKey("/midi");
-
-			msgKey.add((int32_t) 10);
-			msgKey.add((int32_t) 100);
-
-			msgKey.send(oscBuf);
-			slip.sendMessage(oscBuf.buffer, oscBuf.length);
-
-			msgKey.empty(); // free space occupied by message
-			note_on_flag = 0;
-		}
+		MIDItoOSC();
 
 
 		if (slip.recvMessage()) {
@@ -209,7 +224,7 @@ int main(int argc, char* argv[]) {
 			if (!msgIn.hasError()) {
 				msgIn.dispatch("/led", ledControl, 0);
 				//msgIn.dispatch("/oled", oledControl, 0);
-				msgIn.dispatch("/getknobs", getKnobs, 0);
+				//msgIn.dispatch("/getknobs", getKnobs, 0);
 				msgIn.dispatch("/shutdown", shutdown, 0);
 				msgIn.empty(); // free space occupied by message
 			} else {   // just empty it if there was an error
@@ -385,6 +400,106 @@ static void DMA_Config(void) {
 
 //// end ADC DMA
 
+// MIDI to OSC
+void MIDItoOSC(void){
+	if (note_on_flag){
+		OSCMessage msgMIDI("/mnon");
+
+		msgMIDI.add((int32_t) note_on_ch);
+		msgMIDI.add((int32_t) note_on_num);
+		msgMIDI.add((int32_t) note_on_vel);
+
+		msgMIDI.send(oscBuf);
+		slip.sendMessage(oscBuf.buffer, oscBuf.length);
+
+		msgMIDI.empty(); // free space occupied by message
+		note_on_flag = 0;
+	}
+	if (note_off_flag){
+		OSCMessage msgMIDI("/mnoff");
+
+		msgMIDI.add((int32_t) note_off_ch);
+		msgMIDI.add((int32_t) note_off_num);
+		msgMIDI.add((int32_t) note_off_vel);
+
+		msgMIDI.send(oscBuf);
+		slip.sendMessage(oscBuf.buffer, oscBuf.length);
+
+		msgMIDI.empty(); // free space occupied by message
+		note_off_flag = 0;
+	}
+	if (pgm_chg_flag){
+		OSCMessage msgMIDI("/mpc");
+
+		msgMIDI.add((int32_t) pgm_chg_ch);
+		msgMIDI.add((int32_t) pgm_chg_num);
+
+		msgMIDI.send(oscBuf);
+		slip.sendMessage(oscBuf.buffer, oscBuf.length);
+
+		msgMIDI.empty(); // free space occupied by message
+		pgm_chg_flag = 0;
+	}
+	if (cc_flag){
+		OSCMessage msgMIDI("/mcc");
+
+		msgMIDI.add((int32_t) cc_ch);
+		msgMIDI.add((int32_t) cc_num);
+		msgMIDI.add((int32_t) cc_value);
+
+		msgMIDI.send(oscBuf);
+		slip.sendMessage(oscBuf.buffer, oscBuf.length);
+
+		msgMIDI.empty(); // free space occupied by message
+		cc_flag = 0;
+	}
+	if (start_flag){
+		OSCMessage msgMIDI("/mstart");
+
+		msgMIDI.add((int32_t) 1);
+
+		msgMIDI.send(oscBuf);
+		slip.sendMessage(oscBuf.buffer, oscBuf.length);
+
+		msgMIDI.empty(); // free space occupied by message
+		start_flag = 0;
+	}
+	if (stop_flag){
+		OSCMessage msgMIDI("/mstop");
+
+		msgMIDI.add((int32_t) 1);
+
+		msgMIDI.send(oscBuf);
+		slip.sendMessage(oscBuf.buffer, oscBuf.length);
+
+		msgMIDI.empty(); // free space occupied by message
+		stop_flag = 0;
+	}
+	if (continue_flag){
+		OSCMessage msgMIDI("/mcont");
+
+		msgMIDI.add((int32_t) 1);
+
+		msgMIDI.send(oscBuf);
+		slip.sendMessage(oscBuf.buffer, oscBuf.length);
+
+		msgMIDI.empty(); // free space occupied by message
+		continue_flag = 0;
+	}
+	if (sync_flag){
+		OSCMessage msgMIDI("/msync");
+
+		msgMIDI.add((int32_t) 1);
+
+		msgMIDI.send(oscBuf);
+		slip.sendMessage(oscBuf.buffer, oscBuf.length);
+
+		msgMIDI.empty(); // free space occupied by message
+		sync_flag = 0;
+	}
+}
+ // end MIDI OSC
+
 // OSC callbacks
 void oledControl(OSCMessage &msg) {
 
@@ -541,14 +656,14 @@ void remapKeys() {
 
 	keyValues[cycleCount][0] = keyValuesRaw[0];
 	keyValues[cycleCount][1] = keyValuesRaw[1];
-	keyValues[cycleCount][3] = keyValuesRaw[2];
-	keyValues[cycleCount][24] = keyValuesRaw[3];
-	keyValues[cycleCount][6] = keyValuesRaw[4];
-	keyValues[cycleCount][8] = keyValuesRaw[5];
-	keyValues[cycleCount][7] = keyValuesRaw[6];
-	keyValues[cycleCount][2] = keyValuesRaw[7];
-	keyValues[cycleCount][23] = keyValuesRaw[8];
-	keyValues[cycleCount][5] = keyValuesRaw[9];
+	keyValues[cycleCount][2] = keyValuesRaw[2];
+	keyValues[cycleCount][3] = keyValuesRaw[3];
+	keyValues[cycleCount][4] = keyValuesRaw[4];
+	keyValues[cycleCount][5] = keyValuesRaw[5];
+	keyValues[cycleCount][6] = keyValuesRaw[6];
+	keyValues[cycleCount][7] = keyValuesRaw[7];
+	keyValues[cycleCount][8] = keyValuesRaw[8];
+	keyValues[cycleCount][9] = keyValuesRaw[9];
 
 
 	cycleCount++;
@@ -561,7 +676,7 @@ void checkForKeyEvent() {
 	remapKeys();
 	uint32_t i;
 
-	for (i = 0; i < 26; i++) {
+	for (i = 0; i < 10; i++) {
 		if ((keyValues[0][i]) && (keyValues[1][i]) && (keyValues[2][i])
 				&& (keyValues[3][i])) {
 
@@ -644,8 +759,6 @@ void checkFootSwitch (void) {
 		}
 	}
 }
-
-
 
 #pragma GCC diagnostic pop
 

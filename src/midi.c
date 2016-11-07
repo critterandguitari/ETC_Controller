@@ -9,6 +9,29 @@
 #include "uart.h"
 
 int note_on_flag = 0;
+int note_on_num;
+int note_on_vel;
+int note_on_ch;
+
+int note_off_flag =0;
+int note_off_num;
+int note_off_vel;
+int note_off_ch;
+
+int pgm_chg_flag = 0;
+int pgm_chg_num;
+int pgm_chg_ch;
+
+int cc_flag = 0;
+int cc_num;
+int cc_ch;
+int cc_value;
+
+int sync_flag = 0;
+int stop_flag = 0;
+int start_flag = 0;
+int continue_flag = 0;
+
 
 void recvByte(int byte) {
         int tmp;
@@ -16,7 +39,7 @@ void recvByte(int byte) {
     int bigval;           /*  temp 14-bit value for pitch, song pos */
 
 
-    if (recvMode_ & MODE_PROPRIETARY
+    if ((recvMode_ & MODE_PROPRIETARY)
       && byte != STATUS_END_PROPRIETARY)
     {
         /* If proprietary handling compiled in, just pass all data received
@@ -391,42 +414,55 @@ unsigned int getParam(unsigned int param)
 
 //  MIDI Callbacks
 void handleNoteOff(unsigned int channel, unsigned int note, unsigned int velocity) {
-
+	note_off_flag = 1;
+	note_off_num = note;
+	note_off_vel = velocity;
+	note_off_ch = channel;
 }
 
 void handleNoteOn(unsigned int channel, unsigned int note, unsigned int velocity) {
 	note_on_flag = 1;
+	note_on_num = note;
+	note_on_vel = velocity;
+	note_on_ch = channel;
 }
 
 void handleSync(void) {
-
+	sync_flag = 1;
 }
 
 void handleStart(void) {
-
+	start_flag = 1;
 }
 
 void handleStop(void) {
-
+	stop_flag = 1;
 }
 
 
 void handleVelocityChange(unsigned int channel, unsigned int note, unsigned int velocity) {}
 
-//float32_t midi_cc[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-
 void handleControlChange(unsigned int channel, unsigned int controller, unsigned int value) {
-	//midi_cc[(controller - 10) & 0x7] = (float32_t)value / 127.f;
+	cc_flag = 1;
+	cc_num = controller;
+	cc_value = value;
+	cc_ch = channel;
 
 }
 
-void handleProgramChange(unsigned int channel, unsigned int program) {}
+void handleProgramChange(unsigned int channel, unsigned int program) {
+	pgm_chg_flag = 1;
+	pgm_chg_ch = channel;
+	pgm_chg_num = program;
+}
 void handleAfterTouch(unsigned int channel, unsigned int velocity) {}
 void handlePitchChange(unsigned int pitch) {}
 void handleSongPosition(unsigned int position) {}
 void handleSongSelect(unsigned int song) {}
 void handleTuneRequest(void) {}
-void handleContinue(void) {}
+void handleContinue(void) {
+	stop_flag = 1;
+}
 void handleActiveSense(void) {}
 void handleReset(void) {}
 
