@@ -224,7 +224,7 @@ int main(int argc, char* argv[]) {
 			if (!msgIn.hasError()) {
 				msgIn.dispatch("/led", ledControl, 0);
 				//msgIn.dispatch("/oled", oledControl, 0);
-				//msgIn.dispatch("/getknobs", getKnobs, 0);
+				msgIn.dispatch("/getknobs", getKnobs, 0);
 				msgIn.dispatch("/shutdown", shutdown, 0);
 				msgIn.empty(); // free space occupied by message
 			} else {   // just empty it if there was an error
