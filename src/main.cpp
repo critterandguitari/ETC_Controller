@@ -21,6 +21,7 @@ extern "C" {
 #include "SLIPEncodedSerial.h"
 #include "OSC/SimpleWriter.h"
 
+// MIDI buffers
 extern uint8_t uart1_recv_buf[];
 extern uint16_t uart1_recv_buf_head;
 extern uint16_t uart1_recv_buf_tail;
@@ -50,33 +51,19 @@ extern int stop_flag;
 extern int start_flag;
 extern int continue_flag;
 
+// then the MIDI stuff gets packed in this blob
+uint8_t midi_blob[23];  // 5 bytes CC, 16 bytes for note states, 1 byte sync number, 1 byte program
+uint8_t midi_blob_sent = 1;  // flag so midi blob only goes out 1 / frame
+
 // ADC DMA stuff
 #define ADC1_DR_Address    0x40012440
 __IO uint16_t RegularConvData_Tab[9];
 
 // keys and knobs
-uint8_t keyValuesRaw[26];
-uint8_t keyValues[4][26];
-uint8_t keyValuesLast[26];
+uint8_t keyValuesRaw[10];
+uint8_t keyValues[4][10];
+uint8_t keyValuesLast[10];
 uint32_t knobValues[6];
-
-// key mux
-#define MUX_SEL_A_1 GPIO_SetBits(GPIOC, GPIO_Pin_6)
-#define MUX_SEL_A_0 GPIO_ResetBits(GPIOC, GPIO_Pin_6)
-#define MUX_SEL_B_1 GPIO_SetBits(GPIOC, GPIO_Pin_7)
-#define MUX_SEL_B_0 GPIO_ResetBits(GPIOC, GPIO_Pin_7)
-#define MUX_SEL_C_1 GPIO_SetBits(GPIOC, GPIO_Pin_8)
-#define MUX_SEL_C_0 GPIO_ResetBits(GPIOC, GPIO_Pin_8)
-
-// key mux states
-#define MUX_0 MUX_SEL_A_0;MUX_SEL_B_0;MUX_SEL_C_0;
-#define MUX_1 MUX_SEL_A_1;MUX_SEL_B_0;MUX_SEL_C_0;
-#define MUX_2 MUX_SEL_A_0;MUX_SEL_B_1;MUX_SEL_C_0;
-#define MUX_3 MUX_SEL_A_1;MUX_SEL_B_1;MUX_SEL_C_0;
-#define MUX_4 MUX_SEL_A_0;MUX_SEL_B_0;MUX_SEL_C_1;
-#define MUX_5 MUX_SEL_A_1;MUX_SEL_B_0;MUX_SEL_C_1;
-#define MUX_6 MUX_SEL_A_0;MUX_SEL_B_1;MUX_SEL_C_1;
-#define MUX_7 MUX_SEL_A_1;MUX_SEL_B_1;MUX_SEL_C_1;
 
 // OSC stuff
 SLIPEncodedSerial slip;
@@ -95,27 +82,29 @@ static void ADC_Config(void);
 static void DMA_Config(void);
 void hardwareInit(void);
 
-
 // OSC callbacks
-void oledControl(OSCMessage &msg);
+// ok so heres whats going on:
+// ETC sends a newFrame message before rendering a new frame.
+// then we wait 20ms or so to allow MIDI to accumulate before sending it back
+// this will arrive just in time for the next frame
 void ledControl(OSCMessage &msg);
 void getKnobs(OSCMessage &msg);
+void sendMIDI(OSCMessage &msg);
 void shutdown(OSCMessage &msg);
+void newFrame(OSCMessage &msg);
 // end OSC callbacks
 
 /// scan keys
-void keyMuxSel(uint32_t sel);
 uint32_t scanKeys();
 void remapKeys();
 void checkForKeyEvent();
 void updateKnobs() ;
-void checkEncoder(void) ;
 
 //foot
 void checkFootSwitch (void) ;
 
-// midi
-void MIDItoOSC(void);
+// checks midi flags and packs data into the midi_blob
+void packMIDI(void);
 
 int main(int argc, char* argv[]) {
 
@@ -123,7 +112,6 @@ int main(int argc, char* argv[]) {
 
 	blink_led_init();
 	blink_led_off();
-
 
 	timer_start();
 
@@ -143,60 +131,43 @@ int main(int argc, char* argv[]) {
 
 	uart2_init();
 
-	/*for (;;){
-
-		uart1_send(0xAA);
-	}*/
-
 	hardwareInit();
 
 	midi_init(0);
 
-	// Infinite loop
-
-	// oled init
-	//ssd1306_init(0);
-
-	//println_8_spacy("   ORGANELLE", 12, 6, 4);
-
-	//println_8("for more patches visit", 22, 0, 22);
-	//println_8("www.organelle.io", 16, 8, 28);
-//	println_8("for patches", 11, 8, 42);
-
 	char progressStr[20];
 	int len = 0;
 	int progress = 0;
-	len = sprintf(progressStr, "starting: %d %%", progress);
-	println_8(progressStr, len, 8, 52);
-	ssd1306_refresh();
 
 	stopwatchStart();
 
+	// blue while ETC booting
+	AUX_LED_GREEN_ON;
+
+	// waiting for /ready command
 	while (1) {
 		if (slip.recvMessage()) {
-			// fill the message and dispatch it
-
 			msgIn.fill(slip.decodedBuf, slip.decodedLength);
-
-			// dispatch it
 			if (!msgIn.hasError()) {
 				// wait for start message so we aren't sending stuff during boot
 				if (msgIn.fullMatch("/ready", 0)) {
-					msgIn.empty(); // free space occupied by message
+					msgIn.empty();
 					break;
 				}
 				msgIn.empty();
 			} else {   // just empty it if there was an error
-				msgIn.empty(); // free space occupied by message
+				msgIn.empty();
 			}
 		}
+		// after 15 seconds, something is wrong with bootup, switch LED to error
 		if (stopwatchReport() > 1500) {
 			stopwatchStart();
-			len = sprintf(progressStr, "starting: %d %%", progress);
 			if (progress < 99)
 				progress++;
-			println_8(progressStr, len, 8, 52);
-			ssd1306_refresh();
+			else {
+				AUX_LED_GREEN_OFF;
+				AUX_LED_RED_ON;
+			}
 		}
 
 	} // waiting for /ready command
@@ -212,8 +183,8 @@ int main(int argc, char* argv[]) {
 
 		} // gettin MIDI bytes
 
-		MIDItoOSC();
-
+		// check if we got midi, pack it in
+		packMIDI();
 
 		if (slip.recvMessage()) {
 			// fill the message and dispatch it
@@ -223,28 +194,34 @@ int main(int argc, char* argv[]) {
 			// dispatch it
 			if (!msgIn.hasError()) {
 				msgIn.dispatch("/led", ledControl, 0);
-				//msgIn.dispatch("/oled", oledControl, 0);
-				msgIn.dispatch("/getknobs", getKnobs, 0);
+				//msgIn.dispatch("/getknobs", getKnobs, 0);
+				//msgIn.dispatch("/getmidi", getMIDI, 0);
 				msgIn.dispatch("/shutdown", shutdown, 0);
-				msgIn.empty(); // free space occupied by message
+				msgIn.dispatch("/nf", newFrame, 0);
+				msgIn.empty();
 			} else {   // just empty it if there was an error
-				msgIn.empty(); // free space occupied by message
+				msgIn.empty();
 			}
 		}
 
 		// every time mux gets back to 0 key scan is complete
 		scanKeys();
 		checkForKeyEvent(); // and send em out if we got em
+
 		// also check about the foot switch
 		checkFootSwitch();
 
+		// get the values from DMA
 		updateKnobs();
 
-		// check encoder
-		// only check every 5 ms cause the button needs a lot of debounce time
-		if (stopwatchReport() > 50){
-			stopwatchStart();
-			//checkEncoder();
+		// the /nf (newFrame) osc message restarts stop watch
+		// after 20 ms, send the midi_blob back
+		// after 200 ms
+		if (stopwatchReport() > 200){
+			if (!midi_blob_sent) {
+				sendMIDI();
+				midi_blob_sent = 1;
+			}
 		}
 
 	} // Infinite loop, never return.
@@ -401,9 +378,9 @@ static void DMA_Config(void) {
 //// end ADC DMA
 
 // MIDI to OSC
-void MIDItoOSC(void){
+void packMIDI(void){
 	if (note_on_flag){
-		OSCMessage msgMIDI("/mnon");
+	/*	OSCMessage msgMIDI("/mnon");
 
 		msgMIDI.add((int32_t) note_on_ch);
 		msgMIDI.add((int32_t) note_on_num);
@@ -412,11 +389,11 @@ void MIDItoOSC(void){
 		msgMIDI.send(oscBuf);
 		slip.sendMessage(oscBuf.buffer, oscBuf.length);
 
-		msgMIDI.empty(); // free space occupied by message
+		msgMIDI.empty();*/
 		note_on_flag = 0;
 	}
 	if (note_off_flag){
-		OSCMessage msgMIDI("/mnoff");
+		/*OSCMessage msgMIDI("/mnoff");
 
 		msgMIDI.add((int32_t) note_off_ch);
 		msgMIDI.add((int32_t) note_off_num);
@@ -425,11 +402,11 @@ void MIDItoOSC(void){
 		msgMIDI.send(oscBuf);
 		slip.sendMessage(oscBuf.buffer, oscBuf.length);
 
-		msgMIDI.empty(); // free space occupied by message
+		msgMIDI.empty();*/
 		note_off_flag = 0;
 	}
 	if (pgm_chg_flag){
-		OSCMessage msgMIDI("/mpc");
+		/*OSCMessage msgMIDI("/mpc");
 
 		msgMIDI.add((int32_t) pgm_chg_ch);
 		msgMIDI.add((int32_t) pgm_chg_num);
@@ -437,11 +414,11 @@ void MIDItoOSC(void){
 		msgMIDI.send(oscBuf);
 		slip.sendMessage(oscBuf.buffer, oscBuf.length);
 
-		msgMIDI.empty(); // free space occupied by message
+		msgMIDI.empty();*/
 		pgm_chg_flag = 0;
 	}
 	if (cc_flag){
-		OSCMessage msgMIDI("/mcc");
+		/*OSCMessage msgMIDI("/mcc");
 
 		msgMIDI.add((int32_t) cc_ch);
 		msgMIDI.add((int32_t) cc_num);
@@ -450,75 +427,67 @@ void MIDItoOSC(void){
 		msgMIDI.send(oscBuf);
 		slip.sendMessage(oscBuf.buffer, oscBuf.length);
 
-		msgMIDI.empty(); // free space occupied by message
+		msgMIDI.empty();*/
+
+		if (cc_num == 21) midi_blob[0] = cc_value;
+		if (cc_num == 22) midi_blob[1] = cc_value;
+		if (cc_num == 23) midi_blob[2] = cc_value;
+		if (cc_num == 24) midi_blob[3] = cc_value;
+		if (cc_num == 25) midi_blob[4] = cc_value;
+
 		cc_flag = 0;
 	}
 	if (start_flag){
-		OSCMessage msgMIDI("/mstart");
+		/*OSCMessage msgMIDI("/mstart");
 
 		msgMIDI.add((int32_t) 1);
 
 		msgMIDI.send(oscBuf);
 		slip.sendMessage(oscBuf.buffer, oscBuf.length);
 
-		msgMIDI.empty(); // free space occupied by message
+		msgMIDI.empty();*/
 		start_flag = 0;
 	}
 	if (stop_flag){
-		OSCMessage msgMIDI("/mstop");
+		/*OSCMessage msgMIDI("/mstop");
 
 		msgMIDI.add((int32_t) 1);
 
 		msgMIDI.send(oscBuf);
 		slip.sendMessage(oscBuf.buffer, oscBuf.length);
 
-		msgMIDI.empty(); // free space occupied by message
+		msgMIDI.empty();*/
 		stop_flag = 0;
 	}
 	if (continue_flag){
-		OSCMessage msgMIDI("/mcont");
+		/*OSCMessage msgMIDI("/mcont");
 
 		msgMIDI.add((int32_t) 1);
 
 		msgMIDI.send(oscBuf);
 		slip.sendMessage(oscBuf.buffer, oscBuf.length);
 
-		msgMIDI.empty(); // free space occupied by message
+		msgMIDI.empty();*/
 		continue_flag = 0;
 	}
 	if (sync_flag){
-		OSCMessage msgMIDI("/msync");
+		/*OSCMessage msgMIDI("/msync");
 
 		msgMIDI.add((int32_t) 1);
 
 		msgMIDI.send(oscBuf);
 		slip.sendMessage(oscBuf.buffer, oscBuf.length);
 
-		msgMIDI.empty(); // free space occupied by message
+		msgMIDI.empty();*/
 		sync_flag = 0;
 	}
 }
  // end MIDI OSC
 
 // OSC callbacks
-void oledControl(OSCMessage &msg) {
-
-	uint8_t tmp[132];
-	uint8_t i;
-	uint8_t line = 0;
-
-	if (msg.isInt(0)) {
-		line = msg.getInt(0) & 0x7;
-	}
-	if (msg.isBlob(1)) {
-		msg.getBlob(1, tmp, 132);
-	}
-
-	// shift array 4 spaces cause first 4 bytes are the length of blob
-	for (i = 0; i < 128; i++)
-		pix_buf[i + (line * 128)] = tmp[i + 4];
-
-	ssd1306_refresh_line(line);
+void newFrame(OSCMessage &msg){
+	midi_blob_sent = 0;
+	stopwatchStart();
 }
 
 void ledControl(OSCMessage &msg) {
@@ -576,6 +545,19 @@ void ledControl(OSCMessage &msg) {
 	}
 }
 
+void sendMIDI(void) {
+
+	OSCMessage msgMIDI("/mblob"); // blob of midi crap
+
+
+	msgMIDI.add(midi_blob, 23);
+
+
+	msgMIDI.send(oscBuf);
+	slip.sendMessage(oscBuf.buffer, oscBuf.length);
+	msgMIDI.empty();
+}
+
 void getKnobs(OSCMessage &msg) {
 
 	OSCMessage msgKnobs("/knobs");
@@ -602,30 +584,19 @@ void shutdown(OSCMessage &msg) {
 		pix_buf[i] = 0;
 	}
 
-	/*
-	 len = sprintf(progressStr, "starting: %d %%", progress);
-	 println_8(progressStr, len, 8, 52);
-	 ssd1306_refresh();
-	 */
-
 	stopwatchStart();
 	while (progress < 99) {
 		if (stopwatchReport() > 500) {
 			stopwatchStart();
-			len = sprintf(progressStr, "Shutting down: %d %%", progress++);
-			println_8(progressStr, len, 1, 21);
-			ssd1306_refresh();
+			// LED shutdown color here
 		}
 	}
 	// clear screen
 	for (i = 0; i < 1024; i++) {
 		pix_buf[i] = 0;
 	}
-	len = sprintf(progressStr, "Shutdown complete.");
-	println_8(progressStr, len, 1, 21);
-	len = sprintf(progressStr, "Safe to remove power.");
-	println_8(progressStr, len, 1, 43);
-	ssd1306_refresh();
+
+	// LED off, shutdown complete
 
 	for (;;)
 		;  // endless loop here
