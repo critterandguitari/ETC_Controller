@@ -8,30 +8,17 @@
 #include "midi.h"
 #include "uart.h"
 
-int note_on_flag = 0;
-int note_on_num;
-int note_on_vel;
-int note_on_ch;
 
-int note_off_flag =0;
-int note_off_num;
-int note_off_vel;
-int note_off_ch;
+uint8_t midi_blob[23];  // 16 bytes for note states, 5 bytes CC, 1 byte sync number, 1 byte program
 
-int pgm_chg_flag = 0;
-int pgm_chg_num;
-int pgm_chg_ch;
-
-int cc_flag = 0;
-int cc_num;
-int cc_ch;
-int cc_value;
-
-int sync_flag = 0;
-int stop_flag = 0;
-int start_flag = 0;
-int continue_flag = 0;
-
+// indexes for midi_blob (first 16 bytes are binary note states in 128 bit field)
+#define CCK1 16
+#define CCK2 17
+#define CCK3 18
+#define CCK4 19
+#define CCK5 20
+#define SYNC 21
+#define PGM 22
 
 void recvByte(int byte) {
         int tmp;
@@ -384,6 +371,12 @@ void midi_init(uint8_t ch)
 
     /* Listening to all channels (set to 0)*/
     channelIn_ = ch;
+
+    // zero out the blob
+    int i;
+    for (i = 0; i < 23; i++){
+    	midi_blob[i] = 0;
+    }
 }
 
 // Set (package-specific) parameters for the Midi instance
@@ -414,55 +407,60 @@ unsigned int getParam(unsigned int param)
 
 //  MIDI Callbacks
 void handleNoteOff(unsigned int channel, unsigned int note, unsigned int velocity) {
-	note_off_flag = 1;
-	note_off_num = note;
-	note_off_vel = velocity;
-	note_off_ch = channel;
+	uint8_t i, j;
+
+	// unset a binary note on in the bit field of midi_blob
+	i = (note >> 3) & 0xF;
+	j = note & 0x7;
+	midi_blob[i] = midi_blob[i] & ~(1 <<j);
 }
 
 void handleNoteOn(unsigned int channel, unsigned int note, unsigned int velocity) {
-	note_on_flag = 1;
-	note_on_num = note;
-	note_on_vel = velocity;
-	note_on_ch = channel;
+	uint8_t i, j;
+
+	// set a binary note on in the bit field of midi_blob
+	i = (note >> 3) & 0xF;
+	j = note & 0x7;
+	midi_blob[i] = midi_blob[i] | (1 <<j);
 }
 
 void handleSync(void) {
-	sync_flag = 1;
+	// counting 24 ppq
+	midi_blob[SYNC]++;
+	if (midi_blob[SYNC] == 24) midi_blob[SYNC] = 0;
 }
 
 void handleStart(void) {
-	start_flag = 1;
+	midi_blob[SYNC] = 0;
 }
 
 void handleStop(void) {
-	stop_flag = 1;
-}
 
+}
 
 void handleVelocityChange(unsigned int channel, unsigned int note, unsigned int velocity) {}
 
 void handleControlChange(unsigned int channel, unsigned int controller, unsigned int value) {
-	cc_flag = 1;
-	cc_num = controller;
-	cc_value = value;
-	cc_ch = channel;
-
+	if (controller == 21) midi_blob[CCK1] = value;
+	if (controller == 22) midi_blob[CCK2] = value;
+	if (controller == 23) midi_blob[CCK3] = value;
+	if (controller == 24) midi_blob[CCK4] = value;
+	if (controller == 25) midi_blob[CCK5] = value;
 }
 
 void handleProgramChange(unsigned int channel, unsigned int program) {
-	pgm_chg_flag = 1;
-	pgm_chg_ch = channel;
-	pgm_chg_num = program;
+	midi_blob[PGM] = program;
 }
+
 void handleAfterTouch(unsigned int channel, unsigned int velocity) {}
 void handlePitchChange(unsigned int pitch) {}
 void handleSongPosition(unsigned int position) {}
 void handleSongSelect(unsigned int song) {}
 void handleTuneRequest(void) {}
 void handleContinue(void) {
-	stop_flag = 1;
+	midi_blob[SYNC] = 0;
 }
+
 void handleActiveSense(void) {}
 void handleReset(void) {}
 

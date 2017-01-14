@@ -26,33 +26,8 @@ extern uint8_t uart1_recv_buf[];
 extern uint16_t uart1_recv_buf_head;
 extern uint16_t uart1_recv_buf_tail;
 
-// MIDI receive flags and values
-extern int note_on_flag;
-extern int note_on_num;
-extern int note_on_vel;
-extern int note_on_ch;
-
-extern int note_off_flag;
-extern int note_off_num;
-extern int note_off_vel;
-extern int note_off_ch;
-
-extern int pgm_chg_flag;
-extern int pgm_chg_num;
-extern int pgm_chg_ch;
-
-extern int cc_flag;
-extern int cc_num;
-extern int cc_ch;
-extern int cc_value;
-
-extern int sync_flag;
-extern int stop_flag;
-extern int start_flag;
-extern int continue_flag;
-
 // then the MIDI stuff gets packed in this blob
-uint8_t midi_blob[23];  // 5 bytes CC, 16 bytes for note states, 1 byte sync number, 1 byte program
+extern uint8_t midi_blob[23];  // 5 bytes CC, 16 bytes for note states, 1 byte sync number, 1 byte program
 uint8_t midi_blob_sent = 1;  // flag so midi blob only goes out 1 / frame
 
 // ADC DMA stuff
@@ -88,11 +63,13 @@ void hardwareInit(void);
 // then we wait 20ms or so to allow MIDI to accumulate before sending it back
 // this will arrive just in time for the next frame
 void ledControl(OSCMessage &msg);
-void getKnobs(OSCMessage &msg);
-void sendMIDI(OSCMessage &msg);
 void shutdown(OSCMessage &msg);
 void newFrame(OSCMessage &msg);
 // end OSC callbacks
+
+// for sending OSC back (knobs and MIDI,  the keys and fs get sent when they change on poll)
+void sendKnobs(void);
+void sendMIDI(void);
 
 /// scan keys
 uint32_t scanKeys();
@@ -133,10 +110,8 @@ int main(int argc, char* argv[]) {
 
 	hardwareInit();
 
-	midi_init(0);
+	midi_init(1);
 
-	char progressStr[20];
-	int len = 0;
 	int progress = 0;
 
 	stopwatchStart();
@@ -176,15 +151,13 @@ int main(int argc, char* argv[]) {
 
 	while (1) {
 
+		// check for midi,  new midi stuff gets put in the midi_blob
 		while (uart1_recv_buf_tail != uart1_recv_buf_head) {
 			uint8_t tmp8 = uart1_recv_buf[uart1_recv_buf_tail++];
 			uart1_recv_buf_tail %= UART1_BUFFER_SIZE;
 			recvByte(tmp8);
-
 		} // gettin MIDI bytes
 
-		// check if we got midi, pack it in
-		packMIDI();
 
 		if (slip.recvMessage()) {
 			// fill the message and dispatch it
@@ -194,8 +167,6 @@ int main(int argc, char* argv[]) {
 			// dispatch it
 			if (!msgIn.hasError()) {
 				msgIn.dispatch("/led", ledControl, 0);
-				//msgIn.dispatch("/getknobs", getKnobs, 0);
-				//msgIn.dispatch("/getmidi", getMIDI, 0);
 				msgIn.dispatch("/shutdown", shutdown, 0);
 				msgIn.dispatch("/nf", newFrame, 0);
 				msgIn.empty();
@@ -215,11 +186,11 @@ int main(int argc, char* argv[]) {
 		updateKnobs();
 
 		// the /nf (newFrame) osc message restarts stop watch
-		// after 20 ms, send the midi_blob back
-		// after 200 ms
-		if (stopwatchReport() > 200){
+		// after 25 ms towards the end of the frame, send the midi_blob back
+		if (stopwatchReport() > 250){
 			if (!midi_blob_sent) {
 				sendMIDI();
+				sendKnobs();
 				midi_blob_sent = 1;
 			}
 		}
@@ -229,13 +200,11 @@ int main(int argc, char* argv[]) {
 
 void hardwareInit(void){
 
-
 	/* DMA configuration */
 	DMA_Config();
 
 	/* ADC1 configuration */
 	ADC_Config();
-
 
 	// key lines
 	GPIO_InitTypeDef GPIO_InitStructure;
@@ -244,8 +213,6 @@ void hardwareInit(void){
 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA, ENABLE);
 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOB, ENABLE);
 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOC, ENABLE);
-
-
 
 	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5 | GPIO_Pin_7 | GPIO_Pin_8 | GPIO_Pin_9 | GPIO_Pin_10;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
@@ -377,117 +344,10 @@ static void DMA_Config(void) {
 
 //// end ADC DMA
 
-// MIDI to OSC
-void packMIDI(void){
-	if (note_on_flag){
-	/*	OSCMessage msgMIDI("/mnon");
-
-		msgMIDI.add((int32_t) note_on_ch);
-		msgMIDI.add((int32_t) note_on_num);
-		msgMIDI.add((int32_t) note_on_vel);
-
-		msgMIDI.send(oscBuf);
-		slip.sendMessage(oscBuf.buffer, oscBuf.length);
-
-		msgMIDI.empty();*/
-		note_on_flag = 0;
-	}
-	if (note_off_flag){
-		/*OSCMessage msgMIDI("/mnoff");
-
-		msgMIDI.add((int32_t) note_off_ch);
-		msgMIDI.add((int32_t) note_off_num);
-		msgMIDI.add((int32_t) note_off_vel);
-
-		msgMIDI.send(oscBuf);
-		slip.sendMessage(oscBuf.buffer, oscBuf.length);
-
-		msgMIDI.empty();*/
-		note_off_flag = 0;
-	}
-	if (pgm_chg_flag){
-		/*OSCMessage msgMIDI("/mpc");
-
-		msgMIDI.add((int32_t) pgm_chg_ch);
-		msgMIDI.add((int32_t) pgm_chg_num);
-
-		msgMIDI.send(oscBuf);
-		slip.sendMessage(oscBuf.buffer, oscBuf.length);
-
-		msgMIDI.empty();*/
-		pgm_chg_flag = 0;
-	}
-	if (cc_flag){
-		/*OSCMessage msgMIDI("/mcc");
-
-		msgMIDI.add((int32_t) cc_ch);
-		msgMIDI.add((int32_t) cc_num);
-		msgMIDI.add((int32_t) cc_value);
-
-		msgMIDI.send(oscBuf);
-		slip.sendMessage(oscBuf.buffer, oscBuf.length);
-
-		msgMIDI.empty();*/
-
-		if (cc_num == 21) midi_blob[0] = cc_value;
-		if (cc_num == 22) midi_blob[1] = cc_value;
-		if (cc_num == 23) midi_blob[2] = cc_value;
-		if (cc_num == 24) midi_blob[3] = cc_value;
-		if (cc_num == 25) midi_blob[4] = cc_value;
-
-		cc_flag = 0;
-	}
-	if (start_flag){
-		/*OSCMessage msgMIDI("/mstart");
-
-		msgMIDI.add((int32_t) 1);
-
-		msgMIDI.send(oscBuf);
-		slip.sendMessage(oscBuf.buffer, oscBuf.length);
-
-		msgMIDI.empty();*/
-		start_flag = 0;
-	}
-	if (stop_flag){
-		/*OSCMessage msgMIDI("/mstop");
-
-		msgMIDI.add((int32_t) 1);
-
-		msgMIDI.send(oscBuf);
-		slip.sendMessage(oscBuf.buffer, oscBuf.length);
-
-		msgMIDI.empty();*/
-		stop_flag = 0;
-	}
-	if (continue_flag){
-		/*OSCMessage msgMIDI("/mcont");
-
-		msgMIDI.add((int32_t) 1);
-
-		msgMIDI.send(oscBuf);
-		slip.sendMessage(oscBuf.buffer, oscBuf.length);
-
-		msgMIDI.empty();*/
-		continue_flag = 0;
-	}
-	if (sync_flag){
-		/*OSCMessage msgMIDI("/msync");
-
-		msgMIDI.add((int32_t) 1);
-
-		msgMIDI.send(oscBuf);
-		slip.sendMessage(oscBuf.buffer, oscBuf.length);
-
-		msgMIDI.empty();*/
-		sync_flag = 0;
-	}
-}
- // end MIDI OSC
-
 // OSC callbacks
 void newFrame(OSCMessage &msg){
 	midi_blob_sent = 0;
-	stopwatchStart();
+	stopwatchStart();  // start timer on new frame, when it gets to 25 ms
 }
 
 void ledControl(OSCMessage &msg) {
@@ -545,33 +405,6 @@ void ledControl(OSCMessage &msg) {
 	}
 }
 
-void sendMIDI(void) {
-
-	OSCMessage msgMIDI("/mblob"); // blob of midi crap
-
-
-	msgMIDI.add(midi_blob, 23);
-
-
-	msgMIDI.send(oscBuf);
-	slip.sendMessage(oscBuf.buffer, oscBuf.length);
-	msgMIDI.empty();
-}
-
-void getKnobs(OSCMessage &msg) {
-
-	OSCMessage msgKnobs("/knobs");
-
-	uint32_t i;
-	for (i = 0; i < 6; i++) {
-		msgKnobs.add((int32_t) knobValues[i]);
-	}
-
-	msgKnobs.send(oscBuf);
-	slip.sendMessage(oscBuf.buffer, oscBuf.length);
-	msgKnobs.empty();
-}
-
 void shutdown(OSCMessage &msg) {
 
 	int i;
@@ -588,12 +421,9 @@ void shutdown(OSCMessage &msg) {
 	while (progress < 99) {
 		if (stopwatchReport() > 500) {
 			stopwatchStart();
+			progress++;
 			// LED shutdown color here
 		}
-	}
-	// clear screen
-	for (i = 0; i < 1024; i++) {
-		pix_buf[i] = 0;
 	}
 
 	// LED off, shutdown complete
@@ -603,6 +433,33 @@ void shutdown(OSCMessage &msg) {
 }
 
 // end OSC callbacks
+
+// sending MIDI blob back
+void sendMIDI(void) {
+
+	OSCMessage msgMIDI("/mblob"); // blob of midi crap
+
+	msgMIDI.add(midi_blob, 23);
+
+	msgMIDI.send(oscBuf);
+	slip.sendMessage(oscBuf.buffer, oscBuf.length);
+	msgMIDI.empty();
+}
+
+// sending knob values back
+void sendKnobs(void) {
+
+	OSCMessage msgKnobs("/knobs");
+
+	uint32_t i;
+	for (i = 0; i < 6; i++) {
+		msgKnobs.add((int32_t) knobValues[i]);
+	}
+
+	msgKnobs.send(oscBuf);
+	slip.sendMessage(oscBuf.buffer, oscBuf.length);
+	msgKnobs.empty();
+}
 
 /// scan keys
 uint32_t scanKeys() {
