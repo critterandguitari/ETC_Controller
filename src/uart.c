@@ -169,8 +169,6 @@ void USART2_IRQHandler(void) {
 void USART1_IRQHandler(void) {
 
 	// check if the USART1 receive interrupt flag was set
-
-	 AUX_LED_BLUE_ON;
 	if (USART_GetITStatus(USART1, USART_IT_RXNE) != RESET) {
 
 		uart1_recv_buf[uart1_recv_buf_head] = USART_ReceiveData(USART1);
@@ -179,5 +177,4 @@ void USART1_IRQHandler(void) {
 		uart1_recv_buf_head %= UART1_BUFFER_SIZE;  //
 
 	}
-	 AUX_LED_BLUE_OFF;
 }
