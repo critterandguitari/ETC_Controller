@@ -29,6 +29,8 @@ extern uint16_t uart1_recv_buf_tail;
 // then the MIDI stuff gets packed in this blob
 extern uint8_t midi_blob[23];  // 5 bytes CC, 16 bytes for note states, 1 byte sync number, 1 byte program
 uint8_t midi_blob_sent = 1;  // flag so midi blob only goes out 1 / frame
+extern uint8_t new_midi_flag;
+
 
 // ADC DMA stuff
 #define ADC1_DR_Address    0x40012440
@@ -40,17 +42,17 @@ uint8_t keyValues[4][10];
 uint8_t keyValuesLast[10];
 uint32_t knobValues[6];
 
+// current LED color
+// set in the OSC callback, so it can then be flashed
+// a different color (for midi and foot switch)
+uint8_t ledColor = 0;
+extern uint32_t led_flash_countdown;
+uint8_t led_override = 0;
+uint8_t foot_down = 0;
+
 // OSC stuff
 SLIPEncodedSerial slip;
 SimpleWriter oscBuf;
-
-// for outputting to screen
-uint8_t spi_out_buf[130];
-uint8_t spi_out_buf_remaining = 0;
-uint8_t spi_out_buf_index = 0;
-
-// OLED frame
-extern uint8_t pix_buf[];
 
 //// hardware init
 static void ADC_Config(void);
@@ -80,8 +82,8 @@ void updateKnobs() ;
 //foot
 void checkFootSwitch (void) ;
 
-// checks midi flags and packs data into the midi_blob
-void packMIDI(void);
+// led helper
+void setLED(int stat);
 
 int main(int argc, char* argv[]) {
 
@@ -116,8 +118,9 @@ int main(int argc, char* argv[]) {
 
 	stopwatchStart();
 
-	// blue while ETC booting
-	AUX_LED_GREEN_ON;
+	// blue green while ETC booting
+	ledColor = 3;
+	setLED(ledColor);
 
 	// waiting for /ready command
 	while (1) {
@@ -140,8 +143,8 @@ int main(int argc, char* argv[]) {
 			if (progress < 99)
 				progress++;
 			else {
-				AUX_LED_GREEN_OFF;
-				AUX_LED_RED_ON;
+				ledColor = 4;
+				setLED(ledColor);
 			}
 		}
 
@@ -157,6 +160,29 @@ int main(int argc, char* argv[]) {
 			uart1_recv_buf_tail %= UART1_BUFFER_SIZE;
 			recvByte(tmp8);
 		} // gettin MIDI bytes
+
+		// flash LED with new midi
+		if (new_midi_flag){
+			new_midi_flag = 0;
+			setLED(2);
+			led_flash_countdown = 1000;
+			led_override = 1;
+		}
+
+		// foot switch makes led blue
+		if (foot_down){
+			setLED(1);
+		}
+		// no foot swith, but override
+		else if (led_override){
+			if (!led_flash_countdown){
+				led_override = 0;
+				setLED(ledColor);
+			}
+		}
+		// otherwise the OSC color
+		else { setLED(ledColor);}
+
 
 
 		if (slip.recvMessage()) {
@@ -352,7 +378,9 @@ void newFrame(OSCMessage &msg){
 
 void ledControl(OSCMessage &msg) {
 
-	blink_led_on();
+	AUX_LED_RED_OFF;
+	AUX_LED_GREEN_OFF;
+	AUX_LED_BLUE_OFF;
 
 	int stat;
 
@@ -362,46 +390,7 @@ void ledControl(OSCMessage &msg) {
 
 		stat %= 8;
 
-		if (stat == 0) {
-			AUX_LED_RED_OFF;
-			AUX_LED_GREEN_OFF;
-			AUX_LED_BLUE_OFF;
-		}
-		if (stat == 1) {
-			AUX_LED_RED_OFF;
-			AUX_LED_GREEN_OFF;
-			AUX_LED_BLUE_ON;
-		}
-		if (stat == 2) {
-			AUX_LED_RED_OFF;
-			AUX_LED_GREEN_ON;
-			AUX_LED_BLUE_OFF;
-		}
-		if (stat == 3) {
-			AUX_LED_RED_OFF;
-			AUX_LED_GREEN_ON;
-			AUX_LED_BLUE_ON;
-		}
-		if (stat == 4) {
-			AUX_LED_RED_ON;
-			AUX_LED_GREEN_OFF;
-			AUX_LED_BLUE_OFF;
-		}
-		if (stat == 5) {
-			AUX_LED_RED_ON;
-			AUX_LED_GREEN_OFF;
-			AUX_LED_BLUE_ON;
-		}
-		if (stat == 6) {
-			AUX_LED_RED_ON;
-			AUX_LED_GREEN_ON;
-			AUX_LED_BLUE_OFF;
-		}
-		if (stat == 7) {
-			AUX_LED_RED_ON;
-			AUX_LED_GREEN_ON;
-			AUX_LED_BLUE_ON;
-		}
+		ledColor = stat;
 	}
 }
 
@@ -412,27 +401,81 @@ void shutdown(OSCMessage &msg) {
 	int len = 0;
 	int progress = 0;
 
-	// clear screen
-	for (i = 0; i < 1024; i++) {
-		pix_buf[i] = 0;
-	}
-
 	stopwatchStart();
+
+	//LED shutdown color
+	AUX_LED_RED_ON;
+	AUX_LED_GREEN_OFF;
+	AUX_LED_BLUE_ON;
+
 	while (progress < 99) {
 		if (stopwatchReport() > 500) {
 			stopwatchStart();
 			progress++;
-			// LED shutdown color here
 		}
 	}
 
 	// LED off, shutdown complete
+	AUX_LED_RED_OFF;
+	AUX_LED_GREEN_OFF;
+	AUX_LED_BLUE_OFF;
 
 	for (;;)
 		;  // endless loop here
 }
 
 // end OSC callbacks
+
+// led helper
+void setLED(int stat) {
+	AUX_LED_RED_OFF;
+	AUX_LED_GREEN_OFF;
+	AUX_LED_BLUE_OFF;
+
+	stat %= 8;
+
+	if (stat == 0) {
+		AUX_LED_RED_OFF;
+		AUX_LED_GREEN_OFF;
+		AUX_LED_BLUE_OFF;
+	}
+	if (stat == 1) {
+		AUX_LED_RED_OFF;
+		AUX_LED_GREEN_OFF;
+		AUX_LED_BLUE_ON;
+	}
+	if (stat == 2) {
+		AUX_LED_RED_OFF;
+		AUX_LED_GREEN_ON;
+		AUX_LED_BLUE_OFF;
+	}
+	if (stat == 3) {
+		AUX_LED_RED_OFF;
+		AUX_LED_GREEN_ON;
+		AUX_LED_BLUE_ON;
+	}
+	if (stat == 4) {
+		AUX_LED_RED_ON;
+		AUX_LED_GREEN_OFF;
+		AUX_LED_BLUE_OFF;
+	}
+	if (stat == 5) {
+		AUX_LED_RED_ON;
+		AUX_LED_GREEN_OFF;
+		AUX_LED_BLUE_ON;
+	}
+	if (stat == 6) {
+		AUX_LED_RED_ON;
+		AUX_LED_GREEN_ON;
+		AUX_LED_BLUE_OFF;
+	}
+	if (stat == 7) {
+		AUX_LED_RED_ON;
+		AUX_LED_GREEN_ON;
+		AUX_LED_BLUE_ON;
+	}
+
+}
 
 // sending MIDI blob back
 void sendMIDI(void) {
@@ -576,6 +619,7 @@ void checkFootSwitch (void) {
 			msgEncoder.add(1);
 			msgEncoder.send(oscBuf);
 			slip.sendMessage(oscBuf.buffer, oscBuf.length);
+			foot_down = 1;
 		}
 		if ((knobValues[5] > 900) && !foot_last){
 			foot_last = 1;
@@ -584,6 +628,7 @@ void checkFootSwitch (void) {
 			msgEncoder.add(0);
 			msgEncoder.send(oscBuf);
 			slip.sendMessage(oscBuf.buffer, oscBuf.length);
+			foot_down = 0;
 		}
 	}
 }

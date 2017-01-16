@@ -8,7 +8,7 @@
 
 // ----------------------------------------------------------------------------
 
-// Forward declarations.
+uint32_t led_flash_countdown = 0;
 
 void
 timer_tick(void);
@@ -23,6 +23,7 @@ volatile uint32_t stopwatch;
 void timer_start(void) {
 	// Use SysTick as reference for the delay loops.
 	SysTick_Config(SystemCoreClock / TIMER_FREQUENCY_HZ);
+	led_flash_countdown = 0;
 }
 
 void stopwatchStart(void) {
@@ -50,6 +51,10 @@ void timer_tick(void) {
 
 	// increment stopwatch
 	stopwatch++;
+	if (led_flash_countdown != 0u) {
+		--led_flash_countdown;
+	}
+
 }
 
 // ----- SysTick_Handler() ----------------------------------------------------

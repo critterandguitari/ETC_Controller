@@ -10,6 +10,7 @@
 
 
 uint8_t midi_blob[23];  // 16 bytes for note states, 5 bytes CC, 1 byte sync number, 1 byte program
+uint8_t new_midi_flag = 0;
 
 // indexes for midi_blob (first 16 bytes are binary note states in 128 bit field)
 #define CCK1 16
@@ -372,6 +373,9 @@ void midi_init(uint8_t ch)
     /* Listening to all channels (set to 0)*/
     channelIn_ = ch;
 
+    //
+    new_midi_flag = 0;
+
     // zero out the blob
     int i;
     for (i = 0; i < 23; i++){
@@ -413,6 +417,7 @@ void handleNoteOff(unsigned int channel, unsigned int note, unsigned int velocit
 	i = (note >> 3) & 0xF;
 	j = note & 0x7;
 	midi_blob[i] = midi_blob[i] & ~(1 <<j);
+	new_midi_flag = 1;
 }
 
 void handleNoteOn(unsigned int channel, unsigned int note, unsigned int velocity) {
@@ -422,16 +427,19 @@ void handleNoteOn(unsigned int channel, unsigned int note, unsigned int velocity
 	i = (note >> 3) & 0xF;
 	j = note & 0x7;
 	midi_blob[i] = midi_blob[i] | (1 <<j);
+	new_midi_flag = 1;
 }
 
 void handleSync(void) {
 	// counting 24 ppq
 	midi_blob[SYNC]++;
 	if (midi_blob[SYNC] == 24) midi_blob[SYNC] = 0;
+	new_midi_flag = 1;
 }
 
 void handleStart(void) {
 	midi_blob[SYNC] = 0;
+	new_midi_flag = 1;
 }
 
 void handleStop(void) {
@@ -446,10 +454,12 @@ void handleControlChange(unsigned int channel, unsigned int controller, unsigned
 	if (controller == 23) midi_blob[CCK3] = value;
 	if (controller == 24) midi_blob[CCK4] = value;
 	if (controller == 25) midi_blob[CCK5] = value;
+	new_midi_flag = 1;
 }
 
 void handleProgramChange(unsigned int channel, unsigned int program) {
 	midi_blob[PGM] = program;
+	new_midi_flag = 1;
 }
 
 void handleAfterTouch(unsigned int channel, unsigned int velocity) {}
@@ -459,6 +469,7 @@ void handleSongSelect(unsigned int song) {}
 void handleTuneRequest(void) {}
 void handleContinue(void) {
 	midi_blob[SYNC] = 0;
+	new_midi_flag = 1;
 }
 
 void handleActiveSense(void) {}

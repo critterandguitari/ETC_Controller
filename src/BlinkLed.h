@@ -10,12 +10,12 @@
 
 // ----- LED definitions ------------------------------------------------------
 
-#define AUX_LED_BLUE_ON GPIO_ResetBits(GPIOB, GPIO_Pin_8)
+#define AUX_LED_GREEN_ON GPIO_ResetBits(GPIOB, GPIO_Pin_8)
 #define AUX_LED_RED_ON GPIO_ResetBits(GPIOB, GPIO_Pin_9)
-#define AUX_LED_GREEN_ON GPIO_ResetBits(GPIOB, GPIO_Pin_11)
-#define AUX_LED_BLUE_OFF GPIO_SetBits(GPIOB, GPIO_Pin_8)
+#define AUX_LED_BLUE_ON GPIO_ResetBits(GPIOB, GPIO_Pin_11)
+#define AUX_LED_GREEN_OFF GPIO_SetBits(GPIOB, GPIO_Pin_8)
 #define AUX_LED_RED_OFF GPIO_SetBits(GPIOB, GPIO_Pin_9)
-#define AUX_LED_GREEN_OFF GPIO_SetBits(GPIOB, GPIO_Pin_11)
+#define AUX_LED_BLUE_OFF GPIO_SetBits(GPIOB, GPIO_Pin_11)
 
 // Adjust these definitions for your own board.
 
