@@ -1,7 +1,4 @@
-//
-// This file is part of the GNU ARM Eclipse Plug-ins project.
-// Copyright (c) 2014 Liviu Ionescu.
-//
+
 
 #ifndef TIMER_H_
 #define TIMER_H_

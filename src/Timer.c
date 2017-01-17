@@ -1,7 +1,3 @@
-//
-// This file is part of the GNU ARM Eclipse Plug-ins project.
-// Copyright (c) 2014 Liviu Ionescu.
-//
 
 #include "Timer.h"
 #include "cortexm/ExceptionHandlers.h"
