@@ -1,0 +1,1 @@
+/Users/owen/gcc-arm-none-eabi-4_8-2014q1/bin/arm-none-eabi-objcopy -O binary ~/Documents/workspace/ETC_Controller/Debug/ETC_Controller.elf ~/Documents/workspace/ETC_Controller/Debug/ETC_Controller.bin

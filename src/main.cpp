@@ -23,6 +23,9 @@ extern uint8_t uart1_recv_buf[];
 extern uint16_t uart1_recv_buf_head;
 extern uint16_t uart1_recv_buf_tail;
 
+// MIDI channel
+extern int channelIn_;
+
 // then the MIDI stuff gets packed in this blob
 extern uint8_t midi_blob[23];  // 5 bytes CC, 16 bytes for note states, 1 byte sync number, 1 byte program
 uint8_t midi_blob_sent = 1;  // flag so midi blob only goes out 1 / frame
@@ -64,6 +67,7 @@ void hardwareInit(void);
 void ledControl(OSCMessage &msg);
 void shutdown(OSCMessage &msg);
 void newFrame(OSCMessage &msg);
+void midiChannelUpdate(OSCMessage &msg);
 // end OSC callbacks
 
 // for sending OSC back (knobs and MIDI,  the keys and fs get sent when they change on poll)
@@ -91,14 +95,18 @@ int main(int argc, char* argv[]) {
 
 	timer_start();
 
+	AUX_LED_RED_OFF;
+	AUX_LED_GREEN_OFF;
+	AUX_LED_BLUE_OFF;
+
 	// flash leds while power stabilizes
 	// before initializing ADC
 	stopwatchStart();
 	while (stopwatchReport() < 500){ AUX_LED_GREEN_ON; }
 	stopwatchStart();
-	while (stopwatchReport() < 500){ AUX_LED_GREEN_ON; }
+	while (stopwatchReport() < 500){ AUX_LED_GREEN_OFF; }
 	stopwatchStart();
-	while (stopwatchReport() < 500){ AUX_LED_GREEN_ON; }
+	while (stopwatchReport() < 500){ AUX_LED_GREEN_OFF; }
 	stopwatchStart();
 
 	AUX_LED_RED_OFF;
@@ -192,6 +200,7 @@ int main(int argc, char* argv[]) {
 				msgIn.dispatch("/led", ledControl, 0);
 				msgIn.dispatch("/shutdown", shutdown, 0);
 				msgIn.dispatch("/nf", newFrame, 0);
+				msgIn.dispatch("/midich", midiChannelUpdate, 0);
 				msgIn.empty();
 			} else {   // just empty it if there was an error
 				msgIn.empty();
@@ -371,6 +380,12 @@ static void DMA_Config(void) {
 void newFrame(OSCMessage &msg){
 	midi_blob_sent = 0;
 	stopwatchStart();  // start timer on new frame, when it gets to 25 ms
+}
+
+void midiChannelUpdate(OSCMessage &msg){
+	if (msg.isInt(0)) {
+		channelIn_ = msg.getInt(0);
+	}
 }
 
 void ledControl(OSCMessage &msg) {
